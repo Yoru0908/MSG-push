@@ -1,0 +1,83 @@
+name: 坂道消息抓取推送
+
+on:
+  # 定时执行：每15分钟检查一次
+  schedule:
+    - cron: '*/15 * * * *'  # 每15分钟
+  
+  # 允许手动触发
+  workflow_dispatch:
+  
+  # Push到main分支时也执行（用于测试）
+  push:
+    branches:
+      - main
+
+jobs:
+  scrape-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+        with:
+          # 需要完整历史记录来commit hash文件
+          fetch-depth: 0
+      
+      - name: 🟢 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: 📦 安装依赖
+        run: npm ci
+      
+      - name: 🎭 安装 Playwright
+        run: npx playwright install --with-deps chromium
+      
+      - name: 🔐 恢复认证数据
+        run: |
+          mkdir -p data
+          # 从GitHub Secrets恢复cookies（如果存在）
+          if [ ! -z "${{ secrets.HINATAZAKA_COOKIES }}" ]; then
+            echo '${{ secrets.HINATAZAKA_COOKIES }}' > data/cookies-hinatazaka46.json
+          fi
+          if [ ! -z "${{ secrets.SAKURAZAKA_COOKIES }}" ]; then
+            echo '${{ secrets.SAKURAZAKA_COOKIES }}' > data/cookies-sakurazaka46.json
+          fi
+      
+      - name: 🚀 执行抓取
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          HINATAZAKA_EMAIL: ${{ secrets.HINATAZAKA_EMAIL }}
+          HINATAZAKA_PASSWORD: ${{ secrets.HINATAZAKA_PASSWORD }}
+          SAKURAZAKA_EMAIL: ${{ secrets.SAKURAZAKA_EMAIL }}
+          SAKURAZAKA_PASSWORD: ${{ secrets.SAKURAZAKA_PASSWORD }}
+        run: node src/index.js
+      
+      - name: 💾 保存认证数据
+        if: always()
+        run: |
+          # 提交更新的hash文件和cookies
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          
+          git add data/*.txt data/*.json 2>/dev/null || true
+          
+          if git diff --staged --quiet; then
+            echo "📭 无需提交"
+          else
+            git commit -m "chore: 更新抓取数据 [skip ci]"
+            git push
+          fi
+      
+      - name: 📊 上传日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-logs
+          path: |
+            data/
+            *.log
+          retention-days: 7

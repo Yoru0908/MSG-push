@@ -1,0 +1,60 @@
+{
+  "name": "hinatazaka-msg-scraper",
+  "version": "1.0.0",
+  "description": "日向坂46消息抓取推送到Discord",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test-api.js",
+    "test:hinata": "node test-api.js hinatazaka46",
+    "test:sakura": "node test-api.js sakurazaka46",
+    "discover": "node scripts/discover-all-members.js",
+    "update-token": "node scripts/update-token-simple.js",
+    "check-token": "node scripts/decode-token.js",
+    "login": "node scripts/login.js",
+    "login:hinata": "node scripts/login.js hinatazaka46",
+    "login:sakura": "node scripts/login.js sakurazaka46",
+    "quick": "node scripts/quick-detect.js",
+    "quick:hinata": "node scripts/quick-detect.js hinatazaka46",
+    "quick:sakura": "node scripts/quick-detect.js sakurazaka46",
+    "detect": "node scripts/探测认证机制.js",
+    "detect:hinata": "node scripts/探测认证机制.js hinatazaka46",
+    "detect:sakura": "node scripts/探测认证机制.js sakurazaka46",
+    "scrape": "node src/scraper.js",
+    "scrape:hinata": "node src/scraper.js hinatazaka46",
+    "scrape:sakura": "node src/scraper.js sakurazaka46",
+    "scrape:all": "node src/scraper.js all",
+    "debug": "node scripts/debug-page.js",
+    "debug:hinata": "node scripts/debug-page.js hinatazaka46",
+    "debug:sakura": "node scripts/debug-page.js sakurazaka46",
+    "find-api": "node scripts/find-api.js",
+    "find-api:hinata": "node scripts/find-api.js hinatazaka46",
+    "find-api:sakura": "node scripts/find-api.js sakurazaka46",
+    "intercept": "node scripts/intercept-api.js",
+    "intercept:hinata": "node scripts/intercept-api.js hinatazaka46",
+    "intercept:sakura": "node scripts/intercept-api.js sakurazaka46",
+    "test-api": "node scripts/direct-api-test.js",
+    "test-api:hinata": "node scripts/direct-api-test.js hinatazaka46",
+    "test-api:sakura": "node scripts/direct-api-test.js sakurazaka46"
+  },
+  "keywords": [
+    "scraper",
+    "discord",
+    "hinatazaka46"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@thetypefounders/continue-with-google": "^1.5.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.6.1",
+    "otpauth": "^9.4.1",
+    "patchright": "^1.56.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0"
+  }
+}

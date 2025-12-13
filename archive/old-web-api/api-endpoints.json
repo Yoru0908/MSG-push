@@ -1,0 +1,198 @@
+{
+  "lastUpdate": "2025-10-28T09:08:00.000Z",
+  "totalEndpoints": 16,
+  "description": "坂道46消息系统API端点清单",
+  "endpoints": {
+    "日向坂46": {
+      "baseUrl": "https://api.message.hinatazaka46.com",
+      "organizationId": 1,
+      "mainGroupId": 70,
+      "apis": {
+        "标签列表": {
+          "method": "GET",
+          "path": "/v2/tags",
+          "description": "获取所有标签",
+          "params": {},
+          "response": "标签数组"
+        },
+        "群组列表": {
+          "method": "GET",
+          "path": "/v2/groups",
+          "description": "获取组织下的所有群组",
+          "params": {
+            "organization_id": "组织ID (1)"
+          },
+          "response": "群组列表（包含各成员的group_id）"
+        },
+        "成员列表": {
+          "method": "GET",
+          "path": "/v2/groups/{group_id}/members",
+          "description": "获取指定群组的成员列表",
+          "params": {
+            "group_id": "群组ID (如: 70)"
+          },
+          "response": "成员信息数组",
+          "example": "/v2/groups/70/members"
+        },
+        "消息时间线": {
+          "method": "GET",
+          "path": "/v2/groups/{group_id}/timeline",
+          "description": "获取指定群组的消息时间线",
+          "params": {
+            "group_id": "群组ID",
+            "count": "返回数量 (200)",
+            "order": "排序 (desc/asc)",
+            "clear_unread": "清除未读 (true/false)",
+            "updated_from": "增量更新起始时间 (可选)"
+          },
+          "response": "消息列表 {messages: [], letters: [], comments: []}",
+          "examples": [
+            "/v2/groups/70/timeline?count=200&order=desc&clear_unread=true",
+            "/v2/groups/34/timeline?updated_from=2025-10-27T09:47:04Z&count=200&order=asc&clear_unread=true"
+          ]
+        },
+        "历史消息": {
+          "method": "GET",
+          "path": "/v2/groups/{group_id}/past_messages",
+          "description": "获取过往消息",
+          "params": {
+            "group_id": "群组ID"
+          },
+          "response": "历史消息列表",
+          "example": "/v2/groups/70/past_messages"
+        },
+        "已读回执": {
+          "method": "GET",
+          "path": "/v2/receipts",
+          "description": "获取已读回执信息",
+          "params": {},
+          "response": "已读状态"
+        },
+        "订阅产品": {
+          "method": "GET",
+          "path": "/v2/products",
+          "description": "获取可订阅的产品列表",
+          "params": {
+            "type": "产品类型 (subscription)",
+            "store": "商店 (stripe)"
+          },
+          "response": "产品列表",
+          "example": "/v2/products?type=subscription&store=stripe"
+        }
+      },
+      "knownGroupIds": [
+        {
+          "id": 70,
+          "name": "主群组",
+          "description": "日向坂46主要消息群组"
+        },
+        {
+          "id": 34,
+          "name": "成员个人群组",
+          "description": "某位成员的个人timeline"
+        }
+      ]
+    },
+    "櫻坂46": {
+      "baseUrl": "https://api.message.sakurazaka46.com",
+      "organizationId": 1,
+      "mainGroupId": 63,
+      "apis": {
+        "标签列表": {
+          "method": "GET",
+          "path": "/v2/tags",
+          "description": "获取所有标签",
+          "params": {},
+          "response": "标签数组"
+        },
+        "群组列表": {
+          "method": "GET",
+          "path": "/v2/groups",
+          "description": "获取组织下的所有群组",
+          "params": {
+            "organization_id": "组织ID (1)"
+          },
+          "response": "群组列表（包含各成员的group_id）"
+        },
+        "成员列表": {
+          "method": "GET",
+          "path": "/v2/groups/{group_id}/members",
+          "description": "获取指定群组的成员列表",
+          "params": {
+            "group_id": "群组ID (如: 63)"
+          },
+          "response": "成员信息数组",
+          "example": "/v2/groups/63/members"
+        },
+        "消息时间线": {
+          "method": "GET",
+          "path": "/v2/groups/{group_id}/timeline",
+          "description": "获取指定群组的消息时间线",
+          "params": {
+            "group_id": "群组ID",
+            "count": "返回数量 (200)",
+            "order": "排序 (desc/asc)",
+            "clear_unread": "清除未读 (true/false)",
+            "updated_from": "增量更新起始时间 (可选)"
+          },
+          "response": "消息列表 {messages: [], letters: [], comments: []}",
+          "example": "/v2/groups/63/timeline?count=200&order=desc&clear_unread=true"
+        },
+        "历史消息": {
+          "method": "GET",
+          "path": "/v2/groups/{group_id}/past_messages",
+          "description": "获取过往消息",
+          "params": {
+            "group_id": "群组ID"
+          },
+          "response": "历史消息列表",
+          "example": "/v2/groups/63/past_messages"
+        },
+        "已读回执": {
+          "method": "GET",
+          "path": "/v2/receipts",
+          "description": "获取已读回执信息",
+          "params": {},
+          "response": "已读状态"
+        },
+        "订阅产品": {
+          "method": "GET",
+          "path": "/v2/products",
+          "description": "获取可订阅的产品列表",
+          "params": {
+            "type": "产品类型 (subscription)",
+            "store": "商店 (stripe)"
+          },
+          "response": "产品列表",
+          "example": "/v2/products?type=subscription&store=stripe"
+        }
+      },
+      "knownGroupIds": [
+        {
+          "id": 63,
+          "name": "主群组",
+          "description": "櫻坂46主要消息群组"
+        }
+      ]
+    }
+  },
+  "authentication": {
+    "method": "Bearer Token + Cookie",
+    "headers": {
+      "authorization": "Bearer eyJhbGc...",
+      "cookie": "WAPID=xxx; _ga=xxx; ...",
+      "x-talk-app-id": "jp.co.sonymusic.communication.keyakizaka 2.5 (日向坂) / jp.co.sonymusic.communication.sakurazaka 2.5 (櫻坂)",
+      "x-talk-app-platform": "web",
+      "content-type": "application/json",
+      "accept": "application/json"
+    },
+    "tokenExpiry": "通常7-30天",
+    "cookieExpiry": "通常30天"
+  },
+  "notes": {
+    "groupId规律": "每个成员有独立的group_id，通过 /v2/groups/{mainGroupId}/members 可获取所有成员及其group_id",
+    "增量更新": "使用 updated_from 参数可以只获取指定时间后的新消息",
+    "消息类型": "messages数组中包含 text(文本)、image(图片)、video(视频)等类型",
+    "响应结构": "timeline接口返回 {messages: [], letters: [], comments: [], queried_at: '...'}"
+  }
+}

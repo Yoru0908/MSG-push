@@ -1,0 +1,28 @@
+node_modules/
+.env
+*.log
+
+# 认证凭据
+auth/
+cookies/
+tokens/
+
+# 数据缓存
+data/
+cache/
+.state/
+
+# Playwright
+.playwright/
+test-results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 敏感文件
+服务器/
+*.tar.gz
+*_id_ed25519
+*_id_rsa
+*.pem

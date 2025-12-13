@@ -1,0 +1,67 @@
+name: Auto Fetch Messages
+
+on:
+  schedule:
+    # 每小时运行一次（在第0分钟）
+    - cron: '0 * * * *'
+  
+  # 允许手动触发
+  workflow_dispatch:
+
+jobs:
+  fetch-messages:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: auto-login-test/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: ./auto-login-test
+        run: npm ci
+      
+      - name: Install Patchright browsers
+        run: npx patchright install chromium
+      
+      - name: Create .env file
+        working-directory: ./auto-login-test
+        run: |
+          cat > .env << EOF
+          HINATAZAKA_EMAIL=${{ secrets.HINATAZAKA_EMAIL }}
+          HINATAZAKA_PASSWORD=${{ secrets.HINATAZAKA_PASSWORD }}
+          GOOGLE_BACKUP_CODES=${{ secrets.GOOGLE_BACKUP_CODES }}
+          DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }}
+          EOF
+      
+      - name: Run auto login and fetch
+        working-directory: ./auto-login-test
+        run: node patchright-flutter-login.js
+      
+      - name: Upload logs (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs
+          path: auto-login-test/*.log
+          retention-days: 7
+      
+      - name: Notify Discord on failure
+        if: failure()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+            -H "Content-Type: application/json" \
+            -d '{"content": "❌ 自动登录失败！请检查日志。"}'
+      
+      - name: Notify Discord on success
+        if: success()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+            -H "Content-Type: application/json" \
+            -d '{"content": "✅ 自动登录成功！Token已更新。"}'
