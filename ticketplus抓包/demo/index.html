@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ticket Demo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="top-header">
+            <a href="#" class="back-btn">‹</a>
+            <div class="header-title">チケット</div>
+            <button class="detail-btn">公演詳細</button>
+        </header>
+
+        <!-- Main Content (Scrollable) -->
+        <div class="main-content">
+
+            <!-- Ticket Card (Click to stamp) -->
+            <div class="ticket-wrapper" id="ticketCard">
+                <img src="assets/background.png" alt="Ticket Background" class="ticket-bg">
+
+                <!-- Stamp Image -->
+                <img src="assets/stamp_13168.png" alt="Stamp" class="stamp" id="stampImg">
+
+                <div class="ticket-overlay">
+                    <!-- Top Section (Approx 60-65% height) -->
+                    <div class="top-section">
+                        <!-- 'Event Title' text is now assumed to be in the background image. 
+                             We use a spacer if needed, or just position absolute items.
+                             But since 'Artist' etc flows after it, we use margin-top on the first item 
+                             to clear the image's text area. -->
+
+                        <div class="info-block artist-block">
+                            <div class="label">Artist</div>
+                            <div class="text-value">日向坂46</div>
+                        </div>
+
+                        <div class="info-block venue-block">
+                            <div class="label">Venue</div>
+                            <div class="text-value">THEATER MILANO-Za</div>
+                        </div>
+
+                        <div class="info-block date-block">
+                            <div class="label">Date</div>
+                            <div class="text-value date-text">2025/11/26(水)</div>
+                        </div>
+
+                        <div class="time-row">
+                            <div class="info-block">
+                                <div class="label">Open</div>
+                                <div class="text-value">17:45</div>
+                            </div>
+                            <div class="info-block">
+                                <div class="label">Start</div>
+                                <div class="text-value">18:30</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Section (Approx 35-40% height) -->
+                    <div class="bottom-section">
+                        <div class="info-block name-block">
+                            <div class="label">Name</div>
+                            <div class="text-value name-text">XIE JIAJIE さま</div>
+                        </div>
+
+                        <div class="info-block seat-block">
+                            <div class="label">Seat</div>
+                            <div class="text-value seat-text">1階 Ｌ1扉 Ｉ列 5番</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dots & Count -->
+            <div class="pagination">
+                <div class="dot active"></div>
+                <div class="dot"></div>
+                <!-- Add more dots if needed -->
+                <div class="page-number">1/1</div>
+            </div>
+
+            <!-- Warning Footer Box -->
+            <div class="warning-box">
+                <div class="warning-left">
+                    <span>＊特定チケット＊</span>
+                    <span>無断有償譲渡禁止</span>
+                </div>
+                <div class="warning-right">
+                    <span>入場資格者の氏名・連絡先を確認済</span>
+                    <span>事前確認された方以外は入場不可</span>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Bottom Tab Bar -->
+        <nav class="tab-bar">
+            <div class="tab-item">
+                <div class="tab-icon icon-home"></div>
+                <span class="tab-text">ホーム</span>
+            </div>
+            <div class="tab-item active">
+                <div class="tab-icon icon-ticket"></div>
+                <span class="tab-text">チケット</span>
+            </div>
+            <div class="tab-item">
+                <div class="tab-icon icon-mypage"></div>
+                <span class="tab-text">マイページ</span>
+            </div>
+        </nav>
+    </div>
+
+    <script>
+        // Click to trigger stamp animation
+        const ticketCard = document.getElementById('ticketCard');
+        const stampImg = document.getElementById('stampImg');
+
+        ticketCard.addEventListener('click', () => {
+            // Remove functionality if already stamped? Or simple toggle?
+            // Usually one-time action.
+            if (!stampImg.classList.contains('active')) {
+                stampImg.classList.add('active');
+            }
+        });
+    </script>
+    <!-- Parameter Debug GUI -->
+    <script src="debug_gui.js"></script>
+</body>
+
+</html>

@@ -297,26 +297,17 @@ class AppApiListenerV3 {
                         continue;
                     }
 
+                    // 【重要】在处理消息前先更新时间戳，防止并发重复处理
+                    this.lastMessageIds[memberKey] = msgTimestamp;
+                    this.saveState();
+
                     const success = await this.handleNewMessage(siteKey, group, message);
 
-                    // 推送成功才更新时间戳
-                    if (success) {
-                        this.lastMessageIds[memberKey] = msgTimestamp;
-                        this.saveState();
-                    } else {
+                    if (!success) {
                         // 推送失败，记录冷却时间
                         this.failedMembers[memberKey] = Date.now();
                         console.log(`   ⚠️ ${memberName}: 推送失败，${this.retryCooldown / 1000}秒后重试`);
                         break;
-                    }
-                }
-
-                // 更新为最新消息时间戳（即使没有新消息要推送）
-                if (messages.length > 0) {
-                    const latestTimestamp = new Date(messages[0].published_at).getTime();
-                    if (latestTimestamp > (this.lastMessageIds[memberKey] || 0)) {
-                        this.lastMessageIds[memberKey] = latestTimestamp;
-                        this.saveState();
                     }
                 }
 
@@ -349,17 +340,34 @@ class AppApiListenerV3 {
             await this.sendToDiscord(siteKey, group, message);
         }
 
-        // 推送到 QQ 群
+        // 【优化】先翻译一次，避免每个群都重复翻译
+        let translatedText = null;
+        if (message.text) {
+            try {
+                translatedText = await translator.translate(message.text, memberName);
+                if (translatedText) {
+                    console.log(`   ✅ 翻译完成`);
+                } else {
+                    console.log(`   ⚠️ 翻译失败，将只发送原文`);
+                    // 翻译失败报警
+                    this.sendTranslationErrorToDiscord(memberName, message.text);
+                }
+            } catch (e) {
+                console.error('   ⚠️ 翻译出错:', e.message);
+            }
+        }
+
+        // 推送到 QQ 群（使用已翻译的结果）
         // 只要有一个群推送成功就算成功
         let anySuccess = false;
         if (memberRule && memberRule.enabled && memberRule.qqGroups) {
             for (const groupId of memberRule.qqGroups) {
-                const result = await this.sendToQQGroup(groupId, siteKey, group, message);
+                const result = await this.sendToQQGroup(groupId, siteKey, group, message, translatedText);
                 if (result) anySuccess = true;
             }
         } else if (defaultRule && defaultRule.enabled && defaultRule.qqGroups) {
             for (const groupId of defaultRule.qqGroups) {
-                const result = await this.sendToQQGroup(groupId, siteKey, group, message);
+                const result = await this.sendToQQGroup(groupId, siteKey, group, message, translatedText);
                 if (result) anySuccess = true;
             }
         }
@@ -416,7 +424,7 @@ class AppApiListenerV3 {
 
     // ============ QQ 推送 (OneBot v11) ============
 
-    async sendToQQGroup(groupId, siteKey, group, message) {
+    async sendToQQGroup(groupId, siteKey, group, message, translatedText = null) {
         const apiUrl = pushConfig.lagrangeApi;
 
         try {
@@ -435,20 +443,11 @@ class AppApiListenerV3 {
             msgContent += `━━━━━━━━━━\n`;
 
             if (message.text) {
-                // 翻译日文内容
-                let translated = null;
-                try {
-                    translated = await translator.translate(message.text, group.name);
-                } catch (e) {
-                    console.error('⚠️ 翻译出错:', e.message);
-                }
-
-                if (translated) {
-                    msgContent += message.text + `\n\n${translated}`;
+                // 使用已翻译的内容（由 handleNewMessage 传入）
+                if (translatedText) {
+                    msgContent += message.text + `\n\n${translatedText}`;
                 } else {
                     msgContent += message.text;
-                    // 翻译失败报警
-                    this.sendTranslationErrorToDiscord(group.name, message.text);
                 }
             } else {
                 // 根据 message.type 显示媒体类型

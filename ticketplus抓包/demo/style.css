@@ -1,0 +1,421 @@
+:root {
+    --card-aspect: 702 / 1016;
+    --primary-text: #fff;
+    --label-text: #005484;
+    --accent-yellow: #ffeb3b;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial, sans-serif;
+    background: linear-gradient(135deg, #6c5b7b, #c06c84);
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    color: white;
+    /* Prevent body scroll, let container handle it */
+    overflow: hidden;
+}
+
+.app-container {
+    width: 100%;
+    height: 100vh;
+    /* Fixed height to strictly simulate mobile screen */
+    margin: 0 auto;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+/* --- Header --- */
+.top-header {
+    height: 48px;
+    background-color: rgba(255, 255, 255, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    color: #000;
+    flex-shrink: 0;
+    z-index: 100;
+}
+
+.back-btn {
+    font-size: 28px;
+    color: #b0b0b0;
+    text-decoration: none;
+    line-height: 1;
+    font-weight: 300;
+}
+
+.header-title {
+    font-weight: 600;
+    font-size: 16px;
+}
+
+.detail-btn {
+    background-color: #333;
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: bold;
+    border: none;
+}
+
+/* --- Scrollable Content --- */
+.main-content {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 15px;
+    padding-bottom: 20px;
+    position: relative;
+}
+
+.ticket-wrapper {
+    /* Larger width as requested: "Margins very small" */
+    width: 92%;
+    max-width: 400px;
+    /* Allow it to grow on larger phones */
+    position: relative;
+    aspect-ratio: 702 / 1016;
+    margin-bottom: auto;
+    /* Push content below it down, but let flex distribute */
+    border-radius: 12px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+    /* No overflow:hidden so stamp can bleed if needed, but card usually contains it. */
+    cursor: pointer;
+}
+
+.ticket-bg {
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+    /* Ensure it fills exact aspect */
+    display: block;
+    border-radius: 12px;
+    /* Apply radius to image */
+}
+
+/* Overlay Content Grid */
+.ticket-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Top Section */
+.top-section {
+    height: 61.5%;
+    /* Tuned split point */
+    /* [调节] 整体内容的边距: 上 右 下 左 */
+    padding: 24px 24px 0 24px;
+    /* 这里最后的 '24px' 控制整体内容距离左边的距离 */
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 2;
+}
+
+/* Bottom Section */
+.bottom-section {
+    flex: 1;
+    /* Fill remaining */
+    /* [调节] 下半部分内容的边距: 上 右 下 左 */
+    padding: 5px 24px 20px 24px;
+    /* 这里最后的 '24px' 控制下半部分距离左边的距离 */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    z-index: 2;
+}
+
+/* Typography Helpers */
+.info-block {
+    margin-bottom: 12px;
+    /* 调节每一组信息之间的垂直间距 */
+}
+
+.label {
+    /* 标签文字 (如 Artist, Venue) */
+    font-size: 11px;
+    /* [调节] 字体大小 */
+    color: var(--label-text);
+    margin-bottom: 3px;
+    /* [调节] 标签和下方内容的间距 */
+    opacity: 0.9;
+}
+
+.text-value {
+    /* 主要内容文字 (如 日向坂46) */
+    font-size: 16px;
+    /* [调节] 默认字体大小 */
+    font-weight: 700;
+    /* [调节] 字体粗细 (400=细, 700=粗) */
+    letter-spacing: 0.5px;
+    /* [调节] 字间距 */
+    line-height: 1.2;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Specific Adjustments - 针对各个部分的具体调节 */
+/* Because image has text, we need to push Artist down. 
+   Assuming image text takes up top ~15-20% */
+/* Artist (日向坂46) 位置 */
+.artist-block {
+    margin-top: 62px;
+    margin-left: -8px;
+}
+
+.artist-block .text-value {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+/* Venue (THEATER MILANO-Za) 位置 */
+.venue-block {
+    margin-top: -2px;
+    margin-left: -8px;
+}
+
+.venue-block .text-value {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+/* Date Block 位置 */
+.date-block {
+    margin-top: -2px;
+    margin-left: -8px;
+}
+
+/* Date (2025/11/26) 字体设置 */
+.date-text {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+/* Time (Open/Start) 布局 */
+.time-row {
+    display: flex;
+    gap: 29px;
+    margin-top: -1px;
+    margin-left: -8px;
+}
+
+/* Bottom Section Text - 下半部分 (Name, Seat) */
+.name-block {
+    margin-top: -9px;
+    margin-left: -8px;
+}
+
+.name-text {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.seat-block {
+    margin-top: -10px;
+    margin-left: -8px;
+}
+
+.seat-text {
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: 1px;
+}
+
+/* Stamp Animation */
+.stamp {
+    position: absolute;
+    top: 9%;
+    right: 9%;
+    width: 42%;
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0) rotate(0deg);
+}
+
+.stamp.active {
+    animation: stamp-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes stamp-in {
+    0% {
+        opacity: 0;
+        transform: scale(2) rotate(-10deg);
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    70% {
+        transform: scale(0.9) rotate(2deg);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+    }
+}
+
+
+/* Pagination Dots */
+.pagination {
+    margin-top: 15px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 92%;
+    justify-content: center;
+    position: relative;
+    /* Ensure this sits above warning box */
+}
+
+.dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.dot.active {
+    background: #fff;
+}
+
+.page-number {
+    position: absolute;
+    right: 0;
+    font-size: 12px;
+    color: #fff;
+}
+
+
+/* Warning / Disclaimer Box */
+.warning-box {
+    width: 92%;
+    /* Match card width */
+    margin-bottom: 10px;
+    /* Small gap from footer */
+    /* Positioned relative in flow, but user wants it "at bottom". 
+       By making card bigger (filling space), this naturally gets pushed down. */
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(0, 0, 0, 0.2);
+    display: flex;
+    color: #e0e0e0;
+    font-size: 10px;
+    padding: 0;
+    /* Layout handled by children */
+    height: 44px;
+    /* Fix height to match look */
+}
+
+.warning-left {
+    width: 38%;
+    border-right: 1px dashed rgba(255, 255, 255, 0.3);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: #ffcccc;
+    font-weight: bold;
+    line-height: 1.3;
+}
+
+.warning-right {
+    width: 62%;
+    padding-left: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    line-height: 1.3;
+}
+
+/* Bottom Tab Bar */
+.tab-bar {
+    height: 65px;
+    /* Compact footer */
+    background: #ffffff;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding-bottom: 10px;
+    /* Safe area */
+    flex-shrink: 0;
+}
+
+.tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 60px;
+    cursor: pointer;
+}
+
+.tab-icon {
+    width: 24px;
+    height: 24px;
+    background-color: #b0b0b0;
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+}
+
+.tab-text {
+    font-size: 9px;
+    color: #b0b0b0;
+    font-weight: 500;
+}
+
+.tab-item.active .tab-icon {
+    background-color: #ff7043;
+}
+
+/* Orange tint */
+.tab-item.active .tab-text {
+    color: #ff7043;
+}
+
+/* SVG Icons mock */
+.icon-home {
+    -webkit-mask-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" fill="black"/></svg>');
+}
+
+.icon-ticket {
+    -webkit-mask-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22 10V6a2 2 0 00-2-2H4c-1.1 0-2 .9-2 2v4c1.1 0 1.99.9 1.99 2s-.89 2-2 2v4c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2v-4c-1.1 0-2-.9-2-2s.9-2 2-2zm-2-1.46c-1.19.69-1.19 2.23 0 2.92V18H4v-6.54c1.19-.69 1.19-2.23 0-2.92V6h16v2.54z" fill="black"/></svg>');
+}
+
+.icon-mypage {
+    -webkit-mask-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="black"/></svg>');
+}
+
+/* Mobile Adjustments for smaller screens */
+@media (max-width: 360px) {
+    .ticket-wrapper {
+        width: 94%;
+    }
+
+    /* Even tighter margins */
+    .artist-block {
+        margin-top: 18%;
+    }
+}
