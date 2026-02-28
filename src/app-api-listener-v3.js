@@ -7,8 +7,10 @@ require('dotenv').config();
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const pushConfig = require('./push-config');
+// pushConfig 改为动态加载，支持热重载
+let pushConfig = require('./push-config');
 const translator = require('./translator');
+const { uploadToR2, uploadAvatar } = require('./r2-storage');
 
 // Google OAuth 配置
 const GOOGLE_CLIENT_IDS = {
@@ -39,19 +41,16 @@ const SITES = {
 class AppApiListenerV3 {
     constructor() {
         this.tokens = {};
-        this.googleRefreshTokens = {
-            nogizaka: process.env.NOGIZAKA_REFRESH_TOKEN,
-            sakurazaka: process.env.SAKURAZAKA_REFRESH_TOKEN,
-            hinatazaka: process.env.HINATAZAKA_REFRESH_TOKEN,
-        };
         this.lastMessageIds = this.loadState();  // 从文件加载
+        this.processedMessageIds = this.loadProcessedIds();  // 已处理的消息ID集合
         this.isRunning = false;
         this.checkInterval = 15000;
         this.memberGroups = {};  // 缓存成员 group 信息
         this.isFirstRun = {};    // 跟踪每个成员是否首次轮询
         this.failedMembers = {}; // 跟踪推送失败的成员
-        this.failedPushes = [];  // 失败的推送任务队列
+        this.failedPushes = this.loadFailedPushes();  // 从文件加载失败的推送任务队列
         this.retryCooldown = 1 * 60 * 1000; // 失败后等待1分钟重试
+        this.isProcessing = {};  // 防止同一成员并发处理
     }
 
     // 加载持久化状态
@@ -65,6 +64,19 @@ class AppApiListenerV3 {
             console.error('⚠️ 加载状态文件失败:', e.message);
         }
         return {};
+    }
+
+    // 加载失败重试队列
+    loadFailedPushes() {
+        const stateFile = path.join(__dirname, '../.state/failed-pushes.json');
+        try {
+            if (fs.existsSync(stateFile)) {
+                return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+            }
+        } catch (e) {
+            console.error('⚠️ 加载失败重试队列失败:', e.message);
+        }
+        return [];
     }
 
     // 保存持久化状态
@@ -81,40 +93,133 @@ class AppApiListenerV3 {
         }
     }
 
-    // ============ Google OAuth ============
+    // 保存失败重试队列
+    saveFailedPushes() {
+        const stateDir = path.join(__dirname, '../.state');
+        const stateFile = path.join(stateDir, 'failed-pushes.json');
+        try {
+            if (!fs.existsSync(stateDir)) {
+                fs.mkdirSync(stateDir, { recursive: true });
+            }
+            fs.writeFileSync(stateFile, JSON.stringify(this.failedPushes, null, 2));
+        } catch (e) {
+            console.error('⚠️ 保存失败重试队列失败:', e.message);
+        }
+    }
 
-    async getGoogleTokens(siteKey, googleRefreshToken) {
-        const clientId = GOOGLE_CLIENT_IDS[siteKey];
+    // 加载已处理的消息ID
+    loadProcessedIds() {
+        const stateFile = path.join(__dirname, '../.state/processed-ids.json');
+        try {
+            if (fs.existsSync(stateFile)) {
+                const data = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+                return new Set(data);
+            }
+        } catch (e) {
+            console.error('⚠️ 加载已处理消息ID失败:', e.message);
+        }
+        return new Set();
+    }
+
+    // 保存已处理的消息ID（只保留最近1000条）
+    saveProcessedIds() {
+        const stateDir = path.join(__dirname, '../.state');
+        const stateFile = path.join(stateDir, 'processed-ids.json');
+        try {
+            if (!fs.existsSync(stateDir)) {
+                fs.mkdirSync(stateDir, { recursive: true });
+            }
+            // 只保留最近1000条，防止文件过大
+            const idsArray = Array.from(this.processedMessageIds).slice(-1000);
+            fs.writeFileSync(stateFile, JSON.stringify(idsArray, null, 2));
+        } catch (e) {
+            console.error('⚠️ 保存已处理消息ID失败:', e.message);
+        }
+    }
+
+    // ============ 认证 ============
+
+    // 使用 /v2/update_token 直接刷新 (新方式，不会顶掉手机登录)
+    async authenticateByUpdateToken(siteKey) {
+        const site = SITES[siteKey];
+        const refreshToken = pushConfig.appTokens?.[siteKey];
+
+        if (!refreshToken) {
+            console.log(`⚠️ ${site.name}: 未配置 APP refresh_token`);
+            return false;
+        }
 
         try {
             const response = await axios.post(
-                'https://oauth2.googleapis.com/token',
-                new URLSearchParams({
-                    client_id: clientId,
-                    refresh_token: googleRefreshToken,
-                    grant_type: 'refresh_token',
-                }),
-                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+                `${site.baseUrl}/v2/update_token`,
+                { refresh_token: refreshToken },
+                {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-Talk-App-ID': site.appId,
+                        'Accept-Language': 'ja-JP',
+                        'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 6.0; Samsung Galaxy S7 for keyaki messages Build/MRA58K)',
+                        'Connection': 'Keep-Alive',
+                        'Accept-Encoding': 'gzip',
+                        'TE': 'gzip, deflate; q=0.5',
+                    },
+                    timeout: 30000,
+                }
             );
 
-            console.log(`✅ ${SITES[siteKey].name}: Google token 刷新成功`);
-            return {
-                accessToken: response.data.access_token,
-                idToken: response.data.id_token,
-            };
+            this.tokens[siteKey] = response.data.access_token;
+
+            // 如果服务器返回了新的 refresh_token，记录下来（需要手动更新配置）
+            if (response.data.refresh_token && response.data.refresh_token !== refreshToken) {
+                console.log(`   ⚠️ ${site.name}: 服务器返回了新的 refresh_token: ${response.data.refresh_token}`);
+            }
+
+            console.log(`✅ ${site.name}: 認証成功 (/v2/update_token)`);
+            return true;
         } catch (error) {
-            console.error(`❌ ${SITES[siteKey].name}: Google token 刷新失败:`, error.response?.data || error.message);
+            console.error(`❌ ${site.name}: 認証失敗 (/v2/update_token):`, error.response?.data || error.message);
+            return false;
+        }
+    }
+
+    // Google OAuth 认证 (旧方式，目前可能已失效)
+    async getGoogleIdToken(siteKey) {
+        const clientId = GOOGLE_CLIENT_IDS[siteKey];
+        const refreshToken = pushConfig.authTokens?.[siteKey];
+
+        if (!refreshToken) {
+            console.log(`⚠️ ${SITES[siteKey].name}: 未配置 refresh_token`);
+            return null;
+        }
+
+        try {
+            const response = await axios.post('https://oauth2.googleapis.com/token', {
+                client_id: clientId,
+                refresh_token: refreshToken,
+                grant_type: 'refresh_token',
+            });
+
+            return response.data.id_token;
+        } catch (error) {
+            console.error(`❌ Google token 获取失败:`, error.response?.data || error.message);
             return null;
         }
     }
 
-    async signInWithGoogle(siteKey, googleAccessToken, googleIdToken) {
+    async authenticateByGoogleOAuth(siteKey) {
         const site = SITES[siteKey];
+        const idToken = await this.getGoogleIdToken(siteKey);
+
+        if (!idToken) return false;
 
         try {
             const response = await axios.post(
                 `${site.baseUrl}/v2/signin`,
-                { auth_type: 'google', token: googleIdToken },
+                {
+                    token: idToken,
+                    auth_type: 'google'
+                },
                 {
                     headers: {
                         'Content-Type': 'application/json',
@@ -126,23 +231,78 @@ class AppApiListenerV3 {
             );
 
             this.tokens[siteKey] = response.data.access_token;
-            console.log(`✅ ${site.name}: App 登录成功！`);
-            return response.data.access_token;
+            console.log(`✅ ${site.name}: 認証成功 (Google OAuth)`);
+            return true;
         } catch (error) {
-            console.error(`❌ ${site.name}: App 登录失败:`, error.response?.data || error.message);
-            return null;
+            console.error(`❌ ${site.name}: 認証失敗 (Google OAuth):`, error.response?.data || error.message);
+            return false;
         }
     }
 
     async authenticate(siteKey) {
-        const googleRefreshToken = this.googleRefreshTokens[siteKey];
-        if (!googleRefreshToken) return false;
+        // 混合认证模式: 先尝试 Google OAuth，失败则回退到 APP Token
+        const site = SITES[siteKey];
 
-        const googleTokens = await this.getGoogleTokens(siteKey, googleRefreshToken);
-        if (!googleTokens) return false;
+        // 1. 先尝试 Google OAuth (对于有效的 Google refresh_token)
+        if (pushConfig.authTokens?.[siteKey]) {
+            const googleSuccess = await this.authenticateByGoogleOAuth(siteKey);
+            if (googleSuccess) return true;
+        }
 
-        const appToken = await this.signInWithGoogle(siteKey, googleTokens.accessToken, googleTokens.idToken);
-        return !!appToken;
+        // 2. Google OAuth 失败，尝试 APP Token 刷新
+        if (pushConfig.appTokens?.[siteKey]) {
+            const appSuccess = await this.authenticateByUpdateToken(siteKey);
+            if (appSuccess) return true;
+        }
+
+        console.log(`   ${site.name}: ❌ 認証失敗`);
+        return false;
+    }
+
+    // ============ APP Token 刷新 (备用，目前禁用) ============
+    // 使用 /v2/update_token 刷新 access_token，理论上不会顶掉手机登录
+    // 设置 useAppTokenRefresh = true 启用此方式
+
+    async refreshAppToken(siteKey) {
+        const useAppTokenRefresh = true; // 开关：设为 true 启用
+        if (!useAppTokenRefresh) return false;
+
+        const site = SITES[siteKey];
+        const appRefreshToken = pushConfig.appTokens?.[siteKey];  // 使用 appTokens 而不是 appRefreshTokens
+
+        if (!appRefreshToken) {
+            console.log(`⚠️ ${site.name}: 未配置 APP refresh_token`);
+            return false;
+        }
+
+        try {
+            const response = await axios.post(
+                `${site.baseUrl}/v2/update_token`,
+                { refresh_token: appRefreshToken },
+                {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-Talk-App-ID': site.appId,
+                        'Accept-Language': 'ja-JP',
+                        'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 6.0; Samsung Galaxy S7 for keyaki messages Build/MRA58K)',
+                        'Connection': 'Keep-Alive',
+                        'Accept-Encoding': 'gzip',
+                        'TE': 'gzip, deflate; q=0.5',
+                    }
+                }
+            );
+
+            this.tokens[siteKey] = response.data.access_token;
+            if (response.data.refresh_token && response.data.refresh_token !== appRefreshToken) {
+                console.log(`📝 ${site.name}: 收到新的 refresh_token，请更新配置！`);
+            }
+            console.log(`✅ ${site.name}: APP Token 刷新成功`);
+            return true;
+        } catch (error) {
+            console.error(`❌ ${site.name}: APP Token 刷新失败:`, error.response?.data || error.message);
+            return false;
+        }
     }
 
     // ============ API 调用 ============
@@ -203,7 +363,7 @@ class AppApiListenerV3 {
         await this.processFailedPushes();
 
         for (const siteKey of Object.keys(SITES)) {
-            if (!this.googleRefreshTokens[siteKey]) continue;
+            if (!pushConfig.authTokens?.[siteKey]) continue;
             if (!this.tokens[siteKey]) continue;
             await this.checkSite(siteKey);
         }
@@ -236,6 +396,9 @@ class AppApiListenerV3 {
                 }
             }
         }
+
+        // 无论成功还是移除，都保存队列状态
+        this.saveFailedPushes();
     }
 
     async checkSite(siteKey) {
@@ -271,7 +434,7 @@ class AppApiListenerV3 {
                 this.memberGroups[memberKey] = {
                     name: memberName,
                     siteKey: siteKey,
-                    imageUrl: group.image_url,
+                    imageUrl: group.thumbnail,
                 };
 
                 const messages = await this.getTimeline(siteKey, group.id, 5);
@@ -297,7 +460,17 @@ class AppApiListenerV3 {
                         continue;
                     }
 
-                    // 【重要】在处理消息前先更新时间戳，防止并发重复处理
+                    // 【去重】检查消息ID是否已处理过（ID不用于排序，只用于去重）
+                    if (this.processedMessageIds.has(message.id)) {
+                        console.log(`   ⏭️ ${memberName}: 跳过已处理消息`);
+                        continue;
+                    }
+
+                    // 立即标记为已处理
+                    this.processedMessageIds.add(message.id);
+                    this.saveProcessedIds();
+
+                    // 更新时间戳
                     this.lastMessageIds[memberKey] = msgTimestamp;
                     this.saveState();
 
@@ -362,7 +535,10 @@ class AppApiListenerV3 {
         let anySuccess = false;
         if (memberRule && memberRule.enabled && memberRule.qqGroups) {
             for (const groupId of memberRule.qqGroups) {
-                const result = await this.sendToQQGroup(groupId, siteKey, group, message, translatedText);
+                // 检查该群是否在 noTranslateGroups 中
+                const skipTranslation = memberRule.noTranslateGroups?.includes(groupId);
+                const textToSend = skipTranslation ? null : translatedText;
+                const result = await this.sendToQQGroup(groupId, siteKey, group, message, textToSend);
                 if (result) anySuccess = true;
             }
         } else if (defaultRule && defaultRule.enabled && defaultRule.qqGroups) {
@@ -370,6 +546,20 @@ class AppApiListenerV3 {
                 const result = await this.sendToQQGroup(groupId, siteKey, group, message, translatedText);
                 if (result) anySuccess = true;
             }
+        }
+
+        // 推送到 Telegram
+        if (memberRule && memberRule.enabled && memberRule.telegramChats && pushConfig.telegram?.enabled) {
+            for (const chatId of memberRule.telegramChats) {
+                const result = await this.sendToTelegram(chatId, group, message, translatedText);
+                if (result) anySuccess = true;
+            }
+        }
+
+        // 推送到 Discord (成员专属 webhook)
+        if (memberRule && memberRule.enabled && memberRule.discord) {
+            const result = await this.sendToDiscordWebhook(memberRule.discord, siteKey, group, message, translatedText);
+            if (result) anySuccess = true;
         }
 
         return anySuccess;
@@ -392,7 +582,7 @@ class AppApiListenerV3 {
                 description: message.text || `[${this.getMessageType(message)}]`,
                 color: this.getSiteColor(siteKey),
                 timestamp: message.published_at,
-                thumbnail: { url: group.image_url },
+                thumbnail: { url: group.thumbnail },
                 footer: { text: SITES[siteKey].name }
             };
 
@@ -403,6 +593,178 @@ class AppApiListenerV3 {
             await axios.post(pushConfig.discordWebhook, { embeds: [embed] });
             console.log('   ✅ Discord 推送成功');
         } catch (error) {
+        }
+    }
+
+    // 成员专属 Discord Webhook 推送（支持 R2 媒体上传）
+    async sendToDiscordWebhook(webhookUrl, siteKey, group, message, translatedText = null) {
+        try {
+            // 构建描述内容
+            let description = '';
+            if (message.text) {
+                description = message.text;
+                if (translatedText) {
+                    description += `\n\n**翻译**：${translatedText}`;
+                }
+            }
+
+            // 处理头像格式 (Discord 不支持 JFIF，需转存 R2)
+            let iconUrl = group.thumbnail;
+            if (pushConfig.r2?.enabled && iconUrl?.endsWith('.jfif')) {
+                iconUrl = await uploadAvatar(iconUrl, group.name);
+            }
+
+            const embed = {
+                author: {
+                    name: group.name,
+                    icon_url: iconUrl
+                },
+                description: description || undefined,
+                color: this.getSiteColor(siteKey),
+                timestamp: message.published_at,
+                footer: { text: SITES[siteKey].name }
+            };
+
+            // 如果有媒体文件，下载并上传到 Discord
+            if (message.file && typeof message.file === 'string') {
+                const isImage = message.type === 'picture' || message.type === 'image';
+                const isVideo = message.type === 'video';
+                const isVoice = message.type === 'voice';
+
+                // 下载媒体文件
+                const localPath = await this.downloadMedia(group.name, message);
+
+                if (localPath && fs.existsSync(localPath)) {
+                    const filename = path.basename(localPath);
+                    const fileSize = fs.statSync(localPath).size;
+
+                    // Discord 文件大小限制 (25MB for free servers)
+                    const MAX_FILE_SIZE = 25 * 1024 * 1024;
+
+                    if (fileSize < MAX_FILE_SIZE) {
+                        // 使用 FormData 上传文件
+                        const FormData = require('form-data');
+                        const form = new FormData();
+
+                        // 图片可以嵌入到 embed 中
+                        if (isImage) {
+                            embed.image = { url: `attachment://${filename}` };
+                        }
+
+                        // 添加 embed 作为 payload_json
+                        form.append('payload_json', JSON.stringify({
+                            embeds: [embed]
+                        }));
+
+                        // 添加文件
+                        form.append('file', fs.createReadStream(localPath), filename);
+
+                        await axios.post(webhookUrl, form, {
+                            headers: form.getHeaders()
+                        });
+
+                        console.log(`   ✅ Discord 推送成功 (文件上传: ${filename})`);
+                        return true;
+                    } else {
+                        // 文件太大，回退到 R2 链接方式
+                        console.log(`   ⚠️ 文件太大 (${(fileSize / 1024 / 1024).toFixed(1)}MB)，使用链接方式`);
+
+                        if (pushConfig.r2?.enabled) {
+                            const r2Url = await uploadToR2(message.file, group.name, message.type);
+                            if (r2Url) {
+                                if (isImage) {
+                                    embed.image = { url: r2Url };
+                                }
+                                await axios.post(webhookUrl, { embeds: [embed] });
+                                if (isVideo || isVoice) {
+                                    await axios.post(webhookUrl, { content: `${isVideo ? '🎬' : '🎤'} ${r2Url}` });
+                                }
+                            }
+                        }
+                        console.log('   ✅ Discord Webhook 推送成功 (链接方式)');
+                        return true;
+                    }
+                }
+            }
+
+            // 无媒体文件，只发送 embed
+            await axios.post(webhookUrl, { embeds: [embed] });
+            console.log('   ✅ Discord Webhook 推送成功');
+            return true;
+        } catch (error) {
+            console.error('   ❌ Discord Webhook 推送失败:', error.message);
+            return false;
+        }
+    }
+
+    // ============ Telegram 推送 ============
+
+    async sendToTelegram(chatId, group, message, translatedText = null) {
+        const botToken = pushConfig.telegram?.botToken;
+        if (!botToken) {
+            console.log('   ⚠️ Telegram Bot Token 未配置');
+            return false;
+        }
+
+        const apiUrl = `https://api.telegram.org/bot${botToken}`;
+
+        try {
+            // 格式化时间
+            const msgTime = new Date(message.published_at);
+            const timeStr = msgTime.toLocaleString('ja-JP', {
+                timeZone: 'Asia/Tokyo',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            // 构建消息文本
+            let text = `*${group.name}* ${timeStr}\n━━━━━━━━━━`;
+            if (message.text) {
+                text += `\n${message.text}`;
+                if (translatedText) {
+                    text += `\n\n${translatedText}`;
+                }
+            }
+
+            // 判断消息类型
+            const hasMedia = message.file && typeof message.file === 'string';
+            const isImage = message.type === 'picture' || message.type === 'image';
+            const isVideo = message.type === 'video';
+
+            if (hasMedia && isImage) {
+                // 发送图片
+                await axios.post(`${apiUrl}/sendPhoto`, {
+                    chat_id: chatId,
+                    photo: message.file,
+                    caption: text,
+                    parse_mode: 'Markdown'
+                });
+            } else if (hasMedia && isVideo) {
+                // 发送视频
+                await axios.post(`${apiUrl}/sendVideo`, {
+                    chat_id: chatId,
+                    video: message.file,
+                    caption: text,
+                    parse_mode: 'Markdown'
+                });
+            } else {
+                // 发送纯文本
+                await axios.post(`${apiUrl}/sendMessage`, {
+                    chat_id: chatId,
+                    text: text,
+                    parse_mode: 'Markdown'
+                });
+            }
+
+            console.log(`   ✅ Telegram ${chatId} 推送成功`);
+            return true;
+        } catch (error) {
+            console.error(`   ❌ Telegram ${chatId} 推送失败:`, error.response?.data?.description || error.message);
+            return false;
         }
     }
 
@@ -432,53 +794,109 @@ class AppApiListenerV3 {
             const msgTime = new Date(message.published_at);
             const timeStr = msgTime.toLocaleString('ja-JP', {
                 timeZone: 'Asia/Tokyo',
+                year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                second: '2-digit'
             });
 
-            // 构建消息内容
-            let msgContent = `【${group.name}】 ${timeStr}\n`;
-            msgContent += `━━━━━━━━━━\n`;
+            // 构建消息头
+            const header = `${group.name} ${timeStr}`;
 
-            if (message.text) {
-                // 使用已翻译的内容（由 handleNewMessage 传入）
-                if (translatedText) {
-                    msgContent += message.text + `\n\n${translatedText}`;
-                } else {
-                    msgContent += message.text;
-                }
-            } else {
-                // 根据 message.type 显示媒体类型
-                if (message.type === 'video') {
-                    msgContent += `[视频]`;
-                } else if (message.type === 'voice') {
-                    msgContent += `[语音]`;
-                } else if (message.type === 'picture' || message.type === 'image') {
-                    msgContent += `[图片]`;
-                } else {
-                    msgContent += `[${message.type || '媒体'}]`;
-                }
-            }
+            // 判断消息类型
+            const hasMedia = message.file && typeof message.file === 'string';
+            const isImage = message.type === 'picture' || message.type === 'image';
+            const isVideo = message.type === 'video';
+            const isVoice = message.type === 'voice';
 
-            // OneBot v11 发送群消息 API
-            const response = await axios.post(`${apiUrl}/send_group_msg`, {
-                group_id: parseInt(groupId),
-                message: msgContent,
-            });
-
-            // 检查返回状态
-            if (response.data && response.data.status === 'failed') {
-                console.error(`   ❌ QQ群 ${groupId} 推送失败:`, response.data.message || 'API返回失败');
-                return false;
-            }
-
-            // 如果有媒体文件，下载到服务器后发送
-            if (message.file && typeof message.file === 'string') {
+            if (hasMedia && isImage) {
+                // 图片消息：标题 + 图片 合并发送（QQ支持）
                 const localPath = await this.downloadMedia(group.name, message);
                 if (localPath) {
+                    let msgContent = `${header}\n[CQ:image,file=file://${localPath}]`;
+
+                    // 如果有文字内容，加在图片后面
+                    if (message.text) {
+                        if (translatedText) {
+                            msgContent += `\n${message.text}\n\n${translatedText}`;
+                        } else {
+                            msgContent += `\n${message.text}`;
+                        }
+                    }
+
+                    const response = await axios.post(`${apiUrl}/send_group_msg`, {
+                        group_id: parseInt(groupId),
+                        message: msgContent,
+                    });
+
+                    if (response.data && response.data.status === 'failed') {
+                        console.error(`   ❌ QQ群 ${groupId} 推送失败:`, response.data.message || 'API返回失败');
+                        return false;
+                    }
+                } else {
+                    // 下载失败，发送文字提示
+                    const fallbackMsg = `${header}\n━━━━━━━━━━\n[图片下载失败]`;
+                    await axios.post(`${apiUrl}/send_group_msg`, {
+                        group_id: parseInt(groupId),
+                        message: fallbackMsg,
+                    });
+                }
+            } else if (hasMedia && isVideo) {
+                // 视频消息：先发标题，再发视频（QQ不支持视频和文字合并）
+                const localPath = await this.downloadMedia(group.name, message);
+                if (localPath) {
+                    // 先发标题
+                    await axios.post(`${apiUrl}/send_group_msg`, {
+                        group_id: parseInt(groupId),
+                        message: `${header}\n━━━━━━━━━━`,
+                    });
+                    // 再发视频
                     await this.sendMediaToQQ(apiUrl, groupId, message.type, localPath);
+                } else {
+                    // 下载失败，发送文字提示
+                    const fallbackMsg = `${header}\n━━━━━━━━━━\n[视频下载失败]`;
+                    await axios.post(`${apiUrl}/send_group_msg`, {
+                        group_id: parseInt(groupId),
+                        message: fallbackMsg,
+                    });
+                }
+            } else if (hasMedia && isVoice) {
+                // 语音消息：标题 + 语音条
+                const localPath = await this.downloadMedia(group.name, message);
+                if (localPath) {
+                    // 先发标题
+                    await axios.post(`${apiUrl}/send_group_msg`, {
+                        group_id: parseInt(groupId),
+                        message: `${header}\n━━━━━━━━━━`,
+                    });
+                    // 再发语音
+                    await this.sendMediaToQQ(apiUrl, groupId, message.type, localPath);
+                }
+            } else {
+                // 纯文本消息
+                let msgContent = `${header}\n`;
+                msgContent += `━━━━━━━━━━\n`;
+
+                if (message.text) {
+                    if (translatedText) {
+                        msgContent += message.text + `\n\n${translatedText}`;
+                    } else {
+                        msgContent += message.text;
+                    }
+                } else {
+                    msgContent += `[${message.type || '未知类型'}]`;
+                }
+
+                const response = await axios.post(`${apiUrl}/send_group_msg`, {
+                    group_id: parseInt(groupId),
+                    message: msgContent,
+                });
+
+                if (response.data && response.data.status === 'failed') {
+                    console.error(`   ❌ QQ群 ${groupId} 推送失败:`, response.data.message || 'API返回失败');
+                    return false;
                 }
             }
 
@@ -486,6 +904,16 @@ class AppApiListenerV3 {
             return true;
         } catch (error) {
             console.error(`   ❌ QQ群 ${groupId} 推送失败:`, error.message);
+
+            // 构建用于重试的消息内容
+            const msgTime = new Date(message.published_at);
+            const timeStr = msgTime.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+            let msgContent = `${group.name} ${timeStr}\n━━━━━━━━━━\n`;
+            if (message.text) {
+                msgContent += translatedText ? message.text + `\n\n${translatedText}` : message.text;
+            } else {
+                msgContent += `[${message.type || '媒体'}]`;
+            }
 
             // 将失败的任务加入重试队列
             this.failedPushes.push({
@@ -497,6 +925,7 @@ class AppApiListenerV3 {
                 retryCount: 1,
             });
 
+            this.saveFailedPushes();
             return false;
         }
     }
@@ -540,9 +969,17 @@ class AppApiListenerV3 {
                 fs.mkdirSync(mediaDir, { recursive: true });
             }
 
-            // 从 URL 提取文件名
+            // 从 URL 提取扩展名
             const urlPath = new URL(message.file).pathname;
-            const fileName = path.basename(urlPath.split('?')[0]);
+            const originalFileName = path.basename(urlPath.split('?')[0]);
+            const ext = path.extname(originalFileName) || '.bin';
+
+            // 使用消息时间生成文件名：成员名_YYYYMMDD_HH:mm:ss.ext
+            const msgTime = new Date(message.published_at);
+            const dateStr = msgTime.toISOString().slice(0, 10).replace(/-/g, '');  // YYYYMMDD
+            const timeStr = msgTime.toISOString().slice(11, 19).replace(/:/g, '-'); // HH-mm-ss (用连字符替代冒号，避免文件名问题)
+            const displayName = memberName; // 保留原始名字含空格
+            const fileName = `${displayName}_${dateStr}_${timeStr}${ext}`;
             const localPath = path.join(mediaDir, fileName);
 
             // 如果文件已存在，直接返回容器内路径
@@ -637,7 +1074,7 @@ class AppApiListenerV3 {
         // 认证
         console.log('🔐 認証中...\n');
         for (const siteKey of Object.keys(SITES)) {
-            if (this.googleRefreshTokens[siteKey]) {
+            if (pushConfig.authTokens?.[siteKey]) {
                 const success = await this.authenticate(siteKey);
                 console.log(`   ${SITES[siteKey].name}: ${success ? '✅ 準備完了' : '❌ 認証失敗'}`);
             }
@@ -647,11 +1084,23 @@ class AppApiListenerV3 {
         setInterval(async () => {
             console.log('\n🔄 定期更新 token...');
             for (const siteKey of Object.keys(SITES)) {
-                if (this.googleRefreshTokens[siteKey]) {
+                if (pushConfig.authTokens?.[siteKey]) {
                     await this.authenticate(siteKey);
                 }
             }
         }, 30 * 60 * 1000);
+
+        // 每5分钟热加载配置
+        setInterval(() => {
+            try {
+                const configPath = require.resolve('./push-config');
+                delete require.cache[configPath];
+                pushConfig = require('./push-config');
+                console.log('🔄 配置已热加载');
+            } catch (e) {
+                console.error('⚠️ 配置热加载失败:', e.message);
+            }
+        }, 5 * 60 * 1000);
 
         // 开始监听
         console.log('\n');

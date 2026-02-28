@@ -89,22 +89,55 @@ class GroupChatHandler {
             seg.type === 'at' && String(seg.data.qq) === String(this.botQQ)
         );
 
+        console.log(`📨 收到群消息 [群${event.group_id}] @机器人: ${isAtMe}`);
+
         if (!isAtMe) return;
 
-        // 检查是否有图片
-        const imageSeg = message.find(seg => seg.type === 'image');
+        // 提取文本内容用于检查关键字
+        const textContent = message
+            .filter(seg => seg.type === 'text')
+            .map(seg => seg.data.text)
+            .join(' ');
+
+        // 检查是否有图片（优先当前消息，其次引用消息）
+        let imageSeg = message.find(seg => seg.type === 'image');
+
+        // 如果当前消息没有图片，检查是否有引用消息包含图片
+        if (!imageSeg) {
+            const replySeg = message.find(seg => seg.type === 'reply');
+            if (replySeg) {
+                console.log(`   📎 检测到引用消息，尝试获取原消息图片...`);
+                // 尝试通过 API 获取引用的原消息
+                try {
+                    const originalMsg = await this.getMessageById(replySeg.data.id);
+                    if (originalMsg && originalMsg.message) {
+                        imageSeg = originalMsg.message.find(seg => seg.type === 'image');
+                        if (imageSeg) {
+                            console.log(`   ✅ 从引用消息中找到图片`);
+                        }
+                    }
+                } catch (e) {
+                    console.log(`   ⚠️ 获取引用消息失败: ${e.message}`);
+                }
+            }
+        }
 
         if (imageSeg) {
-            // 有图片，进行 OCR + 翻译
-            await this.handleImageMessage(event, imageSeg);
+            // 有图片，需要包含"识别"关键字才触发 OCR
+            if (textContent.includes('识别')) {
+                // 同时包含"翻译"才进行 OCR + 翻译，否则只做 OCR
+                const shouldTranslate = textContent.includes('翻译');
+                await this.handleImageMessage(event, imageSeg, shouldTranslate);
+            }
+            // 不包含"识别"则不响应
         } else {
-            // 没有图片，进行文字翻译
+            // 没有图片，进行文字翻译（handleTextMessage 内部会检查"翻译"关键字）
             await this.handleTextMessage(event, message);
         }
     }
 
     /**
-     * 处理文字消息 - 直接翻译
+     * 处理文字消息 - 需要包含"翻译"关键字才执行
      */
     async handleTextMessage(event, message) {
         // 提取文本内容（去掉 @ 部分）
@@ -115,15 +148,24 @@ class GroupChatHandler {
 
         const userText = textParts.join(' ').trim();
 
-        if (!userText) {
-            await this.sendReply(event, '请发送日文内容或图片，我会帮你翻译哦~');
+        // 检查是否包含"翻译"关键字
+        if (!userText.includes('翻译')) {
+            // 不包含翻译关键字，不响应
             return;
         }
 
-        console.log(`📩 收到翻译请求 [群${event.group_id}]: ${userText.substring(0, 50)}...`);
+        // 移除"翻译"关键字，获取要翻译的内容
+        const contentToTranslate = userText.replace(/翻译/g, '').trim();
+
+        if (!contentToTranslate) {
+            await this.sendReply(event, '请在"翻译"后面加上日文内容哦~\n例如: @bot 翻译 こんにちは');
+            return;
+        }
+
+        console.log(`📩 收到翻译请求 [群${event.group_id}]: ${contentToTranslate.substring(0, 50)}...`);
 
         try {
-            const translated = await translator.translate(userText, '用户提问');
+            const translated = await translator.translate(contentToTranslate, '用户提问');
 
             if (translated) {
                 await this.sendReply(event, translated);
@@ -138,9 +180,10 @@ class GroupChatHandler {
     }
 
     /**
-     * 处理图片消息 - OCR + 翻译
+     * 处理图片消息 - OCR (可选翻译)
+     * @param {boolean} shouldTranslate - 是否翻译 OCR 结果
      */
-    async handleImageMessage(event, imageSeg) {
+    async handleImageMessage(event, imageSeg, shouldTranslate = false) {
         const imageUrl = imageSeg.data.url || imageSeg.data.file;
 
         if (!imageUrl) {
@@ -148,10 +191,10 @@ class GroupChatHandler {
             return;
         }
 
-        console.log(`🖼️ 收到图片 OCR 请求 [群${event.group_id}]`);
+        console.log(`🖼️ 收到图片 OCR 请求 [群${event.group_id}] (翻译: ${shouldTranslate ? '是' : '否'})`);
 
         // 发送处理中提示
-        await this.sendReply(event, '🔍 正在识别图片文字...');
+        await this.sendReply(event, shouldTranslate ? '🔍 正在识别并翻译图片文字...' : '🔍 正在识别图片文字...');
 
         try {
             // OCR 识别
@@ -164,16 +207,21 @@ class GroupChatHandler {
 
             console.log(`   📝 识别到文字: ${ocrText.substring(0, 50)}...`);
 
-            // 使用 OCR 专用翻译（双语对照输出）
-            const translated = await translator.translateForOcr(ocrText, '图片OCR');
+            if (shouldTranslate) {
+                // 需要翻译：使用 OCR 专用翻译（双语对照输出）
+                const translated = await translator.translateForOcr(ocrText, '图片OCR');
 
-            if (translated) {
-                // translateForOcr 已经返回双语对照格式，直接发送
-                await this.sendReply(event, translated);
-                console.log(`✅ OCR + 翻译成功`);
+                if (translated) {
+                    await this.sendReply(event, translated);
+                    console.log(`✅ OCR + 翻译成功`);
+                } else {
+                    // 翻译失败，只返回 OCR 结果
+                    await this.sendReply(event, `📝 识别结果:\n${ocrText}\n\n(翻译失败)`);
+                }
             } else {
-                // 翻译失败，只返回 OCR 结果
-                await this.sendReply(event, `📝 识别结果:\n${ocrText}\n\n(翻译失败)`);
+                // 只做 OCR，不翻译
+                await this.sendReply(event, `📝 识别结果:\n${ocrText}`);
+                console.log(`✅ OCR 成功 (无翻译)`);
             }
         } catch (error) {
             console.error('❌ OCR 处理出错:', error.message);
@@ -192,6 +240,21 @@ class GroupChatHandler {
             });
         } catch (error) {
             console.error('❌ 发送回复失败:', error.message);
+        }
+    }
+
+    /**
+     * 通过消息 ID 获取消息详情
+     */
+    async getMessageById(messageId) {
+        try {
+            const response = await axios.post(`${this.napCatApi}/get_msg`, {
+                message_id: messageId
+            });
+            return response.data?.data;
+        } catch (error) {
+            console.error('❌ 获取消息失败:', error.message);
+            return null;
         }
     }
 

@@ -38,7 +38,7 @@ async function recognizeImage(imagePath) {
                 'Authorization': `token ${TOKEN}`,
                 'Content-Type': 'application/json',
             },
-            timeout: 60000,  // 60秒超时
+            timeout: 120000,  // 120秒超时
         });
 
         if (response.status !== 200) {
@@ -74,14 +74,30 @@ async function recognizeImage(imagePath) {
  */
 async function recognizeImageFromUrl(imageUrl) {
     try {
+        console.log(`   📥 下载图片: ${imageUrl.substring(0, 80)}...`);
+
         // 下载图片
         const response = await axios.get(imageUrl, {
             responseType: 'arraybuffer',
             timeout: 30000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
         });
+
+        const contentType = response.headers['content-type'] || 'unknown';
+        const dataSize = response.data.length;
+        console.log(`   📦 下载完成: ${dataSize} bytes, Content-Type: ${contentType}`);
+
+        // 检查是否是有效图片
+        if (!contentType.includes('image') && dataSize < 1000) {
+            console.error(`   ❌ 下载的不是图片数据!`);
+            return '';
+        }
 
         // 转为 base64
         const base64Data = Buffer.from(response.data).toString('base64');
+        console.log(`   📝 Base64 长度: ${base64Data.length}, 前缀: ${base64Data.substring(0, 20)}...`);
 
         // 调用 API
         const ocrResponse = await axios.post(API_URL, {
@@ -95,7 +111,7 @@ async function recognizeImageFromUrl(imageUrl) {
                 'Authorization': `token ${TOKEN}`,
                 'Content-Type': 'application/json',
             },
-            timeout: 60000,
+            timeout: 120000,
         });
 
         if (ocrResponse.status !== 200) {
@@ -138,7 +154,7 @@ async function recognizeImageFromBase64(base64Data) {
                 'Authorization': `token ${TOKEN}`,
                 'Content-Type': 'application/json',
             },
-            timeout: 60000,
+            timeout: 120000,
         });
 
         if (response.status !== 200) {

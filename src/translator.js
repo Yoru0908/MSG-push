@@ -1,8 +1,9 @@
 const axios = require('axios');
 const usageStats = require('./usage-stats');
 
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyBPFyev06o31EgrCoOVqiiTtChBP88S0vc';
-const MODEL = 'gemini-2.5-pro';
+// 从环境变量读取配置
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCcbmhtIuTPm1QyfjHwaV5cKo4GMPdWwRA';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
 
 const fs = require('fs');
 const path = require('path');
@@ -34,52 +35,59 @@ try {
 }
 
 /**
- * 调用 Google Gemini 翻译消息（仅译文输出）
- * @param {string} text 日文原文
- * @param {string} memberName 成员名字（用于上下文）
- * @returns {Promise<string>} 翻译后的文本
+ * 通用请求函数 - 通过 Cloudflare Worker 代理
  */
-async function translate(text, memberName) {
-    if (!text || !GOOGLE_API_KEY) return null;
+async function sendGeminiRequest(text, memberName, isOcr = false) {
+    const systemPrompt = isOcr ? SYSTEM_PROMPT_OCR : SYSTEM_PROMPT;
+    const userContent = `【成员名字】: ${memberName}\n\n【日文原文】:\n${text}`;
+
+    // 通过 Cloudflare Worker 代理访问
+    const proxyUrl = `https://gemini-proxy.srzwyuu.workers.dev?key=${GEMINI_API_KEY}&model=${MODEL}`;
 
     try {
-        // 通过 Cloudflare Worker 代理访问 Gemini API（服务器 IP 被 Google 限制）
-        const proxyUrl = `https://gemini-proxy.srzwyuu.workers.dev?key=${GOOGLE_API_KEY}&model=${MODEL}`;
-
         const response = await axios.post(
             proxyUrl,
             {
-                contents: [
-                    {
-                        parts: [
-                            {
-                                text: `${SYSTEM_PROMPT}\n\n【成员名字】: ${memberName}\n\n【日文原文】:\n${text}`
-                            }
-                        ]
-                    }
-                ],
+                contents: [{
+                    parts: [{ text: `${systemPrompt}\n\n${userContent}` }]
+                }],
                 generationConfig: {
-                    temperature: 1.0,
-                    maxOutputTokens: 65536,
+                    temperature: 0.5,
+                    maxOutputTokens: 4096,
                 }
             },
             {
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                timeout: 60000 // 60秒超时
+                headers: { 'Content-Type': 'application/json' },
+                timeout: isOcr ? 300000 : 60000
             }
         );
 
-        const translatedText = response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        return {
+            text: response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim(),
+            usage: response.data.usageMetadata || {}
+        };
+    } catch (error) {
+        throw error;
+    }
+}
 
-        // 统计 Token 使用量
-        const usageMetadata = response.data.usageMetadata || {};
-        const inputTokens = usageMetadata.promptTokenCount || 0;
-        const outputTokens = usageMetadata.candidatesTokenCount || 0;
-        const cachedTokens = usageMetadata.cachedContentTokenCount || 0;
+/**
+ * 翻译消息
+ */
+async function translate(text, memberName) {
+    if (!text) return null;
+
+    try {
+        const result = await sendGeminiRequest(text, memberName, false);
+        const translatedText = result.text;
+
+        // 统计
+        const usage = result.usage;
+        const inputTokens = usage.promptTokenCount || 0;
+        const outputTokens = usage.candidatesTokenCount || 0;
+        const cachedTokens = usage.cachedContentTokenCount || 0;
+
         usageStats.recordCall('translate', inputTokens, outputTokens, !!translatedText, cachedTokens);
-
         return translatedText || null;
     } catch (error) {
         console.error('   ⚠️ 翻译失败:', error.message);
@@ -92,52 +100,21 @@ async function translate(text, memberName) {
 }
 
 /**
- * 调用 Google Gemini 翻译消息（中日双语对照输出，用于 OCR）
- * @param {string} text 日文原文
- * @param {string} memberName 成员名字（用于上下文）
- * @returns {Promise<string>} 中日双语对照的翻译文本
+ * OCR 翻译
  */
 async function translateForOcr(text, memberName) {
-    if (!text || !GOOGLE_API_KEY) return null;
+    if (!text) return null;
 
     try {
-        // 通过 Cloudflare Worker 代理访问 Gemini API（服务器 IP 被 Google 限制）
-        const proxyUrl = `https://gemini-proxy.srzwyuu.workers.dev?key=${GOOGLE_API_KEY}&model=${MODEL}`;
+        const result = await sendGeminiRequest(text, memberName, true);
+        const translatedText = result.text;
 
-        const response = await axios.post(
-            proxyUrl,
-            {
-                contents: [
-                    {
-                        parts: [
-                            {
-                                text: `${SYSTEM_PROMPT_OCR}\n\n【成员名字】: ${memberName}\n\n【日文原文】:\n${text}`
-                            }
-                        ]
-                    }
-                ],
-                generationConfig: {
-                    temperature: 1.0,
-                    maxOutputTokens: 65536,
-                }
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                timeout: 300000 // 5分钟超时（Prompt 较长，不急）
-            }
-        );
+        const usage = result.usage;
+        const inputTokens = usage.promptTokenCount || 0;
+        const outputTokens = usage.candidatesTokenCount || 0;
+        const cachedTokens = usage.cachedContentTokenCount || 0;
 
-        const translatedText = response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-        // 统计 Token 使用量
-        const usageMetadata = response.data.usageMetadata || {};
-        const inputTokens = usageMetadata.promptTokenCount || 0;
-        const outputTokens = usageMetadata.candidatesTokenCount || 0;
-        const cachedTokens = usageMetadata.cachedContentTokenCount || 0;
         usageStats.recordCall('translateOcr', inputTokens, outputTokens, !!translatedText, cachedTokens);
-
         return translatedText || null;
     } catch (error) {
         console.error('   ⚠️ OCR翻译失败:', error.message);
@@ -162,10 +139,9 @@ if (require.main === module) {
             console.log(result);
         });
     } else {
-        translate(testText, '测试').then(result => {
+        translate(testText, 'テスト').then(result => {
             console.log('普通翻译结果:');
             console.log(result);
         });
     }
 }
-
