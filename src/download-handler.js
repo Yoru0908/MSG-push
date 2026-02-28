@@ -107,7 +107,9 @@ async function handleDownloadRequest(event, textContent, sendReply) {
     const task = result.task;
     const outputFile = task.output_file || '';
     const filename = outputFile.split('/').pop();
-    const fileSizeMb = task.file_size ? (task.file_size / 1024 / 1024).toFixed(1) : '?';
+    // 从 alist_url 字段解析文件大小："文件已下载: xxx (X.XMB)"
+    const sizeMatch = (task.alist_url || '').match(/\(([0-9.]+)MB\)/);
+    const fileSizeMb = sizeMatch ? sizeMatch[1] : '?';
 
     // 生成下载链接
     const link = getAlistLink(filename);
