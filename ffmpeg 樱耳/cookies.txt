@@ -1,0 +1,20 @@
+# Netscape HTTP Cookie File
+# From sakurazaka46 radio/list request 2026-03-01
+
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	OptanonConsent	isGpcEnabled=0&datestamp=Sun+Mar+01+2026+02%3A22%3A03+GMT%2B0900+(%E6%97%A5%E6%9C%AC%E6%A8%99%E6%BA%96%E6%99%82)&version=202508.2.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=79937253-4e67-4a66-8cb3-0dc297eddc55&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1%2CC0005%3A1&intType=3&geolocation=JP%3B12&AwaitingReconsent=false
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	OptanonAlertBoxClosed	2026-02-12T12:10:56.370Z
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	_fbp	fb.1.1770897396773.716861511691935554
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	_ga	GA1.2.1651162088.1770897396
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	_gid	GA1.2.1937581444.1772299081
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	ttcsid	1772299081737::PiPzdLOp26fxXSGpKFNB.6.1772299348241.0
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	ttcsid_CJRGJP3C77UDFRIURHQG	1772299081736::kNwK3pIXmEj2eGirFjlm.6.1772299348241.1
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	_ga_F26TDBWM4S	GS2.1.s1772299081$o6$g1$t1772299324$j13$l0$h0
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	_tt_enable_cookie	1
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	_ttp	01KH8VBN2C9S21T64BQS2HV7D8_.tt.1, _gat_UA-68428703-4=1
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	wap_last_event	showWidgetPage
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	wovn_selected_lang	ja
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	B81AC560F83BFC8C	f07362d23ab30dbf678c6f985030633c4179d30b
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	_gcl_au	1.1.1701328117.1770897396.1125856642.1772299312.1772299313
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	WAPID	8hDDhphme11K3oHq7kDw2fbhHoiOvJzjSBS
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	key	true
+.sakurazaka46.com	TRUE	/	FALSE	1893456000	S5SI	4coa9hhapdmedrmomk90cunoljn63shg
