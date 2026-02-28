@@ -11,6 +11,7 @@ const path = require('path');
 const translator = require('./translator');
 const ocr = require('./ocr');
 const pushConfig = require('./push-config');
+const downloadHandler = require('./download-handler');
 
 class GroupChatHandler {
     constructor() {
@@ -130,6 +131,11 @@ class GroupChatHandler {
                 await this.handleImageMessage(event, imageSeg, shouldTranslate);
             }
             // 不包含"识别"则不响应
+        } else if (downloadHandler.isDownloadCommand(textContent) && downloadHandler.extractUrl(textContent)) {
+            // 下载命令（包含下载关键字 + URL）
+            await downloadHandler.handleDownloadRequest(event, textContent,
+                (evt, msg) => this.sendReply(evt, msg)
+            );
         } else {
             // 没有图片，进行文字翻译（handleTextMessage 内部会检查"翻译"关键字）
             await this.handleTextMessage(event, message);
