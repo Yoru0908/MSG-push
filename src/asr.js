@@ -10,7 +10,7 @@ const path = require('path');
 const usageStats = require('./usage-stats');
 
 // ASR 专用模型
-const ASR_MODEL = 'gemini-3.1-pro-preview'; // Gemini 2.0 Flash Experimental 支持音视频
+const ASR_MODEL = 'gemini-3-flash-preview';
 
 // 读取 Prompt 文件
 const PROMPT_FILE = path.join(__dirname, 'prompt.md');
@@ -116,6 +116,9 @@ async function transcribeMedia(filePath, memberName) {
                 generationConfig: {
                     temperature: 0.3,
                     maxOutputTokens: 8192,
+                    thinkingConfig: {
+                        thinkingLevel: "medium"
+                    }
                 }
             },
             {
