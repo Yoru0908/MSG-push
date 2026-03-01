@@ -6,6 +6,9 @@ module.exports = {
     // Lagrange/NapCat OneBot API 地址
     lagrangeApi: process.env.LAGRANGE_API || 'http://127.0.0.1:3000',
 
+    // ASR 音视频转写配置
+    asrEnabled: process.env.ASR_ENABLED === 'true' || true, // 默认启用
+
     // Telegram Bot 配置
     telegram: {
         botToken: '7763241054:AAFaods1TlgwgtxiNysTTtj6mEJ7tdZJBZI',

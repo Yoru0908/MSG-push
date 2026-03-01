@@ -10,6 +10,7 @@ const path = require('path');
 // pushConfig 改为动态加载，支持热重载
 let pushConfig = require('./push-config');
 const translator = require('./translator');
+const asr = require('./asr');
 const { uploadToR2, uploadAvatar } = require('./r2-storage');
 
 // Google OAuth 配置
@@ -500,6 +501,32 @@ class AppApiListenerV3 {
         console.log(`\n🎉 ${site.name} - ${memberName} 发来新消息！`);
         console.log(`   时间: ${message.published_at}`);
         console.log(`   类型: ${this.getMessageType(message)}`);
+        
+        // 检测消息类型
+        const hasMedia = message.file && typeof message.file === 'string';
+        const isVideo = message.type === 'video';
+        const isVoice = message.type === 'voice';
+        const isMedia = hasMedia && (isVideo || isVoice);
+
+        // 【新增】音视频 ASR 转写
+        let asrText = null;
+        if (isMedia && pushConfig.asrEnabled) {
+            console.log(`   🎤 检测到音视频，开始 ASR 转写...`);
+            try {
+                const localPath = await this.downloadMedia(memberName, message);
+                if (localPath) {
+                    asrText = await asr.transcribeMedia(localPath, memberName);
+                    if (asrText) {
+                        console.log(`   ✅ ASR 转写完成: ${asrText.substring(0, 50)}...`);
+                    } else {
+                        console.log(`   ⚠️ ASR 转写失败或无语音内容`);
+                    }
+                }
+            } catch (e) {
+                console.error('   ⚠️ ASR 处理出错:', e.message);
+            }
+        }
+
         if (message.text) {
             console.log(`   内容: ${message.text.substring(0, 50)}...`);
         }
@@ -514,36 +541,61 @@ class AppApiListenerV3 {
         }
 
         // 【优化】先翻译一次，避免每个群都重复翻译
+        // 如果有 ASR 转写结果，优先使用 ASR 结果翻译
         let translatedText = null;
-        if (message.text) {
+        const textToTranslate = asrText || message.text;
+        
+        // 构建显示用的文本：原文 + ASR结果 + 翻译
+        let displayText = null;
+        
+        if (textToTranslate) {
             try {
-                translatedText = await translator.translate(message.text, memberName);
+                // 使用翻译模块，ASR 结果会通过翻译模块处理（翻译 prompt 包含在系统提示中）
+                translatedText = await translator.translate(textToTranslate, memberName);
                 if (translatedText) {
                     console.log(`   ✅ 翻译完成`);
+                    
+                    // 如果有 ASR 结果，在翻译后添加标注
+                    if (asrText) {
+                        displayText = `[🎤 语音转写]\n${translatedText}`;
+                    } else if (message.text) {
+                        displayText = translatedText;
+                    }
                 } else {
                     console.log(`   ⚠️ 翻译失败，将只发送原文`);
                     // 翻译失败报警
-                    this.sendTranslationErrorToDiscord(memberName, message.text);
+                    this.sendTranslationErrorToDiscord(memberName, textToTranslate);
+                    // 即使翻译失败，也显示 ASR 结果（如果有）
+                    if (asrText) {
+                        displayText = `[🎤 语音转写]\n${asrText}`;
+                    }
                 }
             } catch (e) {
                 console.error('   ⚠️ 翻译出错:', e.message);
+                // 翻译出错但有 ASR 结果时，显示 ASR
+                if (asrText) {
+                    displayText = `[🎤 语音转写]\n${asrText}`;
+                }
             }
         }
 
         // 推送到 QQ 群（使用已翻译的结果）
         // 只要有一个群推送成功就算成功
         let anySuccess = false;
+        // 使用 displayText（包含 ASR 标注）还是 translatedText
+        const textForPush = displayText || translatedText;
+        
         if (memberRule && memberRule.enabled && memberRule.qqGroups) {
             for (const groupId of memberRule.qqGroups) {
                 // 检查该群是否在 noTranslateGroups 中
                 const skipTranslation = memberRule.noTranslateGroups?.includes(groupId);
-                const textToSend = skipTranslation ? null : translatedText;
+                const textToSend = skipTranslation ? null : textForPush;
                 const result = await this.sendToQQGroup(groupId, siteKey, group, message, textToSend);
                 if (result) anySuccess = true;
             }
         } else if (defaultRule && defaultRule.enabled && defaultRule.qqGroups) {
             for (const groupId of defaultRule.qqGroups) {
-                const result = await this.sendToQQGroup(groupId, siteKey, group, message, translatedText);
+                const result = await this.sendToQQGroup(groupId, siteKey, group, message, textForPush);
                 if (result) anySuccess = true;
             }
         }
@@ -551,14 +603,14 @@ class AppApiListenerV3 {
         // 推送到 Telegram
         if (memberRule && memberRule.enabled && memberRule.telegramChats && pushConfig.telegram?.enabled) {
             for (const chatId of memberRule.telegramChats) {
-                const result = await this.sendToTelegram(chatId, group, message, translatedText);
+                const result = await this.sendToTelegram(chatId, group, message, textForPush);
                 if (result) anySuccess = true;
             }
         }
 
         // 推送到 Discord (成员专属 webhook)
         if (memberRule && memberRule.enabled && memberRule.discord) {
-            const result = await this.sendToDiscordWebhook(memberRule.discord, siteKey, group, message, translatedText);
+            const result = await this.sendToDiscordWebhook(memberRule.discord, siteKey, group, message, textForPush);
             if (result) anySuccess = true;
         }
 
