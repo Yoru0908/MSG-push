@@ -117,7 +117,7 @@ async function transcribeMedia(filePath, memberName) {
                     temperature: 0.3,
                     maxOutputTokens: 8192,
                     thinkingConfig: {
-                        thinkingLevel: "medium"
+                        thinking_level: "medium"
                     }
                 }
             },
