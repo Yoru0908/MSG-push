@@ -71,13 +71,7 @@ async function transcribeMedia(filePath, memberName) {
         return null;
     }
 
-    const fileSize = fs.statSync(filePath).size;
-    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB 限制
-
-    if (fileSize > MAX_FILE_SIZE) {
-        console.log(`   ⚠️ 文件太大 (${(fileSize / 1024 / 1024).toFixed(1)}MB)，跳过转写`);
-        return null;
-    }
+    // Gemini 3.1 Pro 无文件大小限制（输入 token 上限 1,048,576）
 
     // 转换为 base64
     const base64Data = fileToBase64(filePath);
